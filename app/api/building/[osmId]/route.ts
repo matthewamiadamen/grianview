@@ -31,7 +31,7 @@ export async function GET(
     ? await checkHeritage(geometry.lat, geometry.lng)
     : { heritage: false, conservation_area: false, planning_restricted: false };
 
-  const result = buildSuitabilityResult(enrichedBuilding, {
+  const result = await buildSuitabilityResult(enrichedBuilding, {
     heritage: heritage.heritage,
     conservation: heritage.conservation_area,
     planning_restricted: heritage.planning_restricted,

@@ -10,6 +10,20 @@ const NI_ELECTRICITY_RATE = 0.28;
 const NI_INSTALL_COST_PER_KWP = 1800;
 const KWP_PER_M2 = 0.18;        // 18% efficient panels
 const CO2_PER_KWH_KG = 0.233;
+const OPENAI_MODEL = 'gpt-4o-mini';
+
+type OpenAIResponsesApi = {
+  output_text?: string;
+  output?: Array<{
+    content?: Array<{
+      type?: string;
+      text?: string;
+    }>;
+  }>;
+  error?: {
+    message?: string;
+  };
+};
 
 function radScore(mean: number): number {
   return Math.min(1, Math.max(0, (mean - RADIATION_POOR) / (RADIATION_EXCELLENT - RADIATION_POOR)));
@@ -83,10 +97,114 @@ function buildRecommendation(b: BuildingData, score: number, flags: SuitabilityR
   return `${label} faces ${dir} with ${slopeNote}. Limited solar potential — the ${aspectLabel(b.aspect_deg)}-facing aspect reduces effective generation for this location.`;
 }
 
-export function buildSuitabilityResult(
+async function buildLlmRecommendation(
+  b: BuildingData,
+  score: number,
+  status: SuitabilityStatus,
+  flags: SuitabilityResult['flags'],
+  estimated: SuitabilityResult['estimated']
+): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.log('[suitability][llm] Missing OPENAI_API_KEY. Using fallback recommendation.');
+    return null;
+  }
+
+  const label = b.name ? `"${b.name}"` : b.address ? b.address.split(',')[0] : 'This building';
+  const prompt = [
+    'You are a Belfast solar suitability assistant.',
+    'Write one concise recommendation in plain English (max 75 words).',
+    'Always include clear reasons based on the supplied values (aspect, slope, radiation, roof area, payback).',
+    'If score is below 60, explicitly say this building may not be suitable for solar and explain why.',
+    'If score is 60 or above, still include at least two reasons for the recommendation quality.',
+    'If heritage/conservation/planning restrictions are true, mention planning checks clearly.',
+    'Do not use marketing language. Keep it practical and decision-oriented.',
+    `Building: ${label}`,
+    `Status: ${status}`,
+    `Score: ${score}/100`,
+    `Aspect: ${aspectLabel(b.aspect_deg)} (${b.aspect_deg.toFixed(0)} deg)`,
+    `Slope: ${b.slope_deg.toFixed(0)} deg`,
+    `Roof area: ${b.roof_area_m2.toFixed(1)} m2`,
+    `Mean radiation: ${b.mean_radiation.toFixed(2)} kWh/m2/day`,
+    `Estimated annual generation: ${estimated.annual_kwh} kWh`,
+    `Estimated annual saving: GBP ${estimated.annual_saving_gbp}`,
+    `Estimated payback: ${estimated.payback_years} years`,
+    `Flags: heritage=${flags.heritage}, conservation_area=${flags.conservation_area}, planning_restricted=${flags.planning_restricted}`,
+  ].join('\n');
+
+  try {
+    console.log(`[suitability][llm] Requesting recommendation for osm_id=${b.osm_id ?? 'unknown'} score=${score}`);
+
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        input: [
+          {
+            role: 'system',
+            content: 'You are a Belfast solar suitability assistant. Provide concise, factual recommendations.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        max_output_tokens: 120,
+        temperature: 0.3,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.log(`[suitability][llm] OpenAI request failed: status=${response.status} body=${errorBody.slice(0, 400)}`);
+      return null;
+    }
+
+    const data = await response.json() as OpenAIResponsesApi;
+
+    const textFromArray = data.output
+      ?.flatMap((item) => item.content ?? [])
+      .filter((contentItem) => contentItem.type === 'output_text' || contentItem.type === 'text')
+      .map((contentItem) => contentItem.text?.trim() ?? '')
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    const text = (data.output_text?.trim() || textFromArray || '').trim();
+
+    if (!text) {
+      console.log('[suitability][llm] Empty response content from OpenAI. Using fallback recommendation.');
+      return null;
+    }
+
+    let finalText = text;
+    if (score < 60) {
+      const lowerText = finalText.toLowerCase();
+      const hasCriticalWording =
+        lowerText.includes('may not be suitable') ||
+        lowerText.includes('not suitable') ||
+        lowerText.includes('limited solar potential');
+      if (!hasCriticalWording) {
+        finalText = `This building may not be suitable for solar. ${finalText}`;
+      }
+    }
+
+    console.log(`[suitability][llm] LLM recommendation generated successfully (chars=${finalText.length}).`);
+    return finalText;
+  } catch (error) {
+    console.log('[suitability][llm] Error calling OpenAI. Using fallback recommendation.', error);
+    return null;
+  }
+}
+
+export async function buildSuitabilityResult(
   building: BuildingData,
   enrichment: { heritage: boolean; conservation: boolean; planning_restricted: boolean; building_type: string | null; roof_material: string | null }
-): SuitabilityResult {
+): Promise<SuitabilityResult> {
   const score = computeSuitabilityScore(building);
 
   let status: SuitabilityStatus;
@@ -115,6 +233,22 @@ export function buildSuitabilityResult(
     roof_material: enrichment.roof_material ?? building.roof_material ?? null,
   };
 
+  const fallbackRecommendation = buildRecommendation(building, score, flags);
+  const llmRecommendation = await buildLlmRecommendation(building, score, status, flags, {
+    daily_kwh: Math.round(dailyKwh * 10) / 10,
+    daily_saving_gbp: Math.round(dailyKwh * NI_ELECTRICITY_RATE * 100) / 100,
+    annual_kwh: Math.round(annualKwh),
+    annual_saving_gbp: Math.round(annualSaving),
+    payback_years: paybackYears,
+    co2_offset_kg_year: Math.round(co2Year),
+  });
+
+  if (llmRecommendation) {
+    console.log(`[suitability][llm] Using LLM recommendation for osm_id=${building.osm_id ?? 'unknown'}.`);
+  } else {
+    console.log(`[suitability][llm] Using fallback recommendation for osm_id=${building.osm_id ?? 'unknown'}.`);
+  }
+
   return {
     status,
     score,
@@ -129,7 +263,7 @@ export function buildSuitabilityResult(
       payback_years: paybackYears,
       co2_offset_kg_year: Math.round(co2Year),
     },
-    recommendation: buildRecommendation(building, score, flags),
+    recommendation: llmRecommendation ?? fallbackRecommendation,
     flags,
   };
 }

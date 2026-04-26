@@ -185,6 +185,9 @@ npm install
 # Add Mapbox token
 echo "NEXT_PUBLIC_MAPBOX_TOKEN=your_token" > .env.local
 
+# Add OpenAI key (for dynamic recommendation text)
+echo "OPENAI_API_KEY=your_openai_api_key" >> .env.local
+
 npm run dev
 ```
 
