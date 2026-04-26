@@ -2,6 +2,8 @@
 ### Belfast's Solar Intelligence Platform
 *"Grían" (Irish): Sun*
 
+**🌐 Live: [grianview.vercel.app](https://grianview.vercel.app)**
+
 Built for **HackBelfast** in response to the *Belfast 2036* problem statement.
 
 ---
