@@ -79,18 +79,28 @@ function makeHipRoof(hw: number, hd: number, wallH: number, slopeRad: number): T
   return geo;
 }
 
-function buildRoof(w: number, d: number, wallH: number, slopeDeg: number): THREE.BufferGeometry {
+function buildRoof(w: number, d: number, wallH: number, slopeDeg: number, aspectDeg: number): THREE.BufferGeometry {
   const hw = w / 2, hd = d / 2;
   const slopeRad = Math.max(slopeDeg, 18) * Math.PI / 180;
-  const ar = w / d;
+
   if (slopeDeg < 4) {
     const geo = new THREE.PlaneGeometry(w, d);
     geo.rotateX(-Math.PI / 2);
     geo.translate(0, wallH, 0);
     return geo;
   }
+
+  const ar = w / d;
   if (ar > 0.88 && ar < 1.12) return makeHipRoof(hw, hd, wallH, slopeRad);
-  return makeGabledRoof(hw, hd, wallH, slopeRad, w > d);
+
+  // For a terrace: ridge runs front-to-back (perpendicular to street).
+  // The gable end (triangular peak) faces the street.
+  // If house faces N/S: ridge runs N-S (ridgeAlongX=false), gable end faces street.
+  // If house faces E/W: ridge runs E-W (ridgeAlongX=true), gable end faces street.
+  const a = aspectDeg % 180;
+  const ridgeAlongX = a >= 45 && a <= 135; // aspect near E/W → ridge E-W
+
+  return makeGabledRoof(hw, hd, wallH, slopeRad, ridgeAlongX);
 }
 
 function getSunDirection(date: Date): { dir: THREE.Vector3; isDaylight: boolean } {
@@ -140,9 +150,9 @@ export default function BuildingRenderer({ polygon, centroid, aspectDeg, slopeDe
     const wallGeo = new THREE.BoxGeometry(w, wallH, d);
     wallGeo.translate(0, wallH / 2, 0);
 
-    const roofGeo = buildRoof(w, d, wallH, slopeDeg);
+    const roofGeo = buildRoof(w, d, wallH, slopeDeg, aspectDeg);
     return { wallGeo, roofGeo, size, wallH, w, d };
-  }, [polygon, centroid, slopeDeg]);
+  }, [polygon, centroid, slopeDeg, aspectDeg]);
 
   useEffect(() => {
     const container = canvasRef.current;
