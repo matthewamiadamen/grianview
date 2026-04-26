@@ -1,0 +1,43 @@
+@import 'mapbox-gl/dist/mapbox-gl.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-dm-sans: 'DM Sans', system-ui, sans-serif;
+  --font-dm-mono: 'DM Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background-color: #f7f7f5;
+  color: #1a1a18;
+  font-family: var(--font-dm-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Mapbox overrides */
+.mapboxgl-ctrl-attrib {
+  font-size: 10px !important;
+}
+
+/* Custom green locator cursor — replaces Mapbox's default grab hand */
+.mapboxgl-canvas-container,
+.mapboxgl-canvas-container.mapboxgl-interactive {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M3 3 L19 10 L12 12 L9 19 Z' fill='%2315803d' stroke='white' stroke-width='1.8' stroke-linejoin='round'/%3E%3C/svg%3E") 3 3, crosshair !important;
+}
+
+/* Pointer on clickable buildings */
+.mapboxgl-canvas-container.mapboxgl-interactive.cursor-pointer {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M3 3 L19 10 L12 12 L9 19 Z' fill='%2322c55e' stroke='white' stroke-width='1.8' stroke-linejoin='round'/%3E%3Ccircle cx='12' cy='12' r='2.5' fill='white'/%3E%3C/svg%3E") 3 3, crosshair !important;
+}
