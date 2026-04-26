@@ -15,6 +15,26 @@ function radScore(mean: number): number {
   return Math.min(1, Math.max(0, (mean - RADIATION_POOR) / (RADIATION_EXCELLENT - RADIATION_POOR)));
 }
 
+function aspectScore(deg: number, slope: number): number {
+  // Softer penalty curve — mean aspect on a gabled roof averages both faces
+  // so we don't penalise as hard for deviation from south
+  const diff = Math.abs(deg - 180);
+  const normalised = diff > 180 ? 360 - diff : diff;
+  const base = Math.max(0, 1 - normalised / 200); // gentler than /180
+
+  // Low slope = high uncertainty about which face the mean represents
+  // Reduce aspect weight proportionally — flat roofs are aspect-agnostic anyway
+  const confidence = Math.min(1, slope / 20);
+  return base * confidence + (1 - confidence) * 0.5; // blend toward neutral 0.5
+}
+
+function slopeScore(deg: number): number {
+  // Optimal 30–40° for Belfast latitude
+  if (deg >= 30 && deg <= 40) return 1;
+  if (deg < 30) return deg / 30;
+  return Math.max(0, 1 - (deg - 40) / 50);
+}
+
 function areaScore(m2: number): number {
   if (m2 >= 40) return 1;
   if (m2 >= 25) return 0.7;
@@ -22,18 +42,23 @@ function areaScore(m2: number): number {
   return 0.2;
 }
 
-function elecScore(kwh: number, area: number): number {
-  // Normalise against expected output for the area at good radiation
-  const expected = area * RADIATION_EXCELLENT * KWP_PER_M2;
-  return Math.min(1, kwh / expected);
+function shadingScore(mean: number): number {
+  return Math.min(1, mean / RADIATION_EXCELLENT);
 }
 
 export function computeSuitabilityScore(b: BuildingData): number {
   const weighted =
-    radScore(b.mean_radiation) * 0.45 +
-    areaScore(b.roof_area_m2) * 0.25 +
-    elecScore(b.elec_prod, b.roof_area_m2) * 0.30;
+    radScore(b.mean_radiation)        * 0.35 +
+    aspectScore(b.aspect_deg, b.slope_deg) * 0.25 +
+    slopeScore(b.slope_deg)           * 0.20 +
+    areaScore(b.roof_area_m2)    * 0.10 +
+    shadingScore(b.mean_radiation) * 0.10;
   return Math.round(weighted * 100);
+}
+
+function aspectLabel(deg: number): string {
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg / 22.5) % 16];
 }
 
 function buildRecommendation(b: BuildingData, score: number, flags: SuitabilityResult['flags']): string {
@@ -41,14 +66,21 @@ function buildRecommendation(b: BuildingData, score: number, flags: SuitabilityR
     return `This building is within a conservation area. Planning permission for visible solar panels may be restricted — contact Belfast City Council before proceeding.`;
   }
   const label = b.name ? `"${b.name}"` : b.address ? b.address.split(',')[0] : 'This building';
+  const dir = aspectLabel(b.aspect_deg);
+  const slopeNote = b.slope_deg >= 28 && b.slope_deg <= 42
+    ? `a well-pitched roof at ${b.slope_deg.toFixed(0)}°`
+    : b.slope_deg < 20
+    ? `a shallow pitch of ${b.slope_deg.toFixed(0)}° which limits output`
+    : `a steep pitch of ${b.slope_deg.toFixed(0)}°`;
+
   if (score >= 65) {
     const payback = Math.round((b.roof_area_m2 * KWP_PER_M2 * NI_INSTALL_COST_PER_KWP) / (b.elec_prod * 182.5 * NI_ELECTRICITY_RATE));
-    return `${label} receives strong solar radiation for Belfast. Based on today's data, it's generating well. Estimated payback in ${payback}–${payback + 2} years.`;
+    return `${label} faces ${dir} with ${slopeNote} — well-suited for solar in Belfast. Estimated payback in ${payback}–${payback + 2} years.`;
   }
   if (score >= 40) {
-    return `${label} has moderate solar potential. Today's radiation figures suggest a small system (2–3 kWp) would be worthwhile, though returns will be below the Belfast average.`;
+    return `${label} faces ${dir} with ${slopeNote}. Moderate solar potential — a small system (2–3 kWp) is likely worthwhile, though returns will be below the Belfast average.`;
   }
-  return `${label} has limited solar potential — likely due to shading or a north-facing aspect. Today's radiation is below the Belfast average for this roof.`;
+  return `${label} faces ${dir} with ${slopeNote}. Limited solar potential — the ${aspectLabel(b.aspect_deg)}-facing aspect reduces effective generation for this location.`;
 }
 
 export function buildSuitabilityResult(

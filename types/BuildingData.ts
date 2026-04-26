@@ -10,6 +10,9 @@ export interface BuildingData {
   usable_sr: number;            // kWh total usable solar radiation on roof (2-day period)
   elec_prod: number;            // kWh electricity production estimate (2-day period)
   roof_area_m2: number;         // m² building footprint
+  aspect_deg: number;           // roof facing direction 0–360°
+  slope_deg: number;            // roof pitch in degrees
+  elevation_m: number;          // elevation above sea level (m)
   zone_code: number;
   building_type?: string;
   roof_material?: string;

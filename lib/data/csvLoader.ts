@@ -16,6 +16,9 @@ const COL = {
   mean: 'MEAN',
   usable_sr: 'usable_sr',
   elec_prod: 'elec_prod',
+  aspect: 'MEAN_aspect',
+  slope: 'MEAN_slope',
+  elevation: 'MEAN_elev',
   zone_code: 'ZONE_CODE',
   building_type: 'BUILDING',
 } as const;
@@ -40,6 +43,9 @@ function parseRow(row: Record<string, string>): BuildingData {
     usable_sr: parseFloat(row[COL.usable_sr]) || 0,
     elec_prod: parseFloat(row[COL.elec_prod]) || 0,
     roof_area_m2: parseFloat(row[COL.area]) || 0,
+    aspect_deg: parseFloat(row[COL.aspect]) || 180,
+    slope_deg: parseFloat(row[COL.slope]) || 0,
+    elevation_m: parseFloat(row[COL.elevation]) || 0,
     zone_code: parseInt(row[COL.zone_code]) || 0,
   };
 }
