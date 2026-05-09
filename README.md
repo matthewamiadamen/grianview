@@ -4,7 +4,7 @@
 
 **🌐 Live: [grianview.vercel.app](https://grianview.vercel.app)**
 
-Built for **HackBelfast** in response to the *Belfast 2036* problem statement.
+Built for **Belfast** in response to the *Belfast 2036*.
 
 ---
 
